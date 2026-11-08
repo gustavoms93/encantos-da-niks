@@ -1,0 +1,38 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAdmin() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+    match /admins/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false; // Provision admins using the Firebase Console / Admin SDK.
+    }
+    match /inventory/{id} {
+      allow read: if true;
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['quantity', 'updatedAt'])
+        && request.resource.data.quantity is int
+        && request.resource.data.quantity >= 0
+        && request.resource.data.quantity <= 1000000
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+    match /inventory_movements/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly(['productId', 'before', 'after', 'delta', 'reason', 'actor', 'createdAt'])
+        && request.resource.data.productId is int
+        && request.resource.data.before is int
+        && request.resource.data.after is int
+        && request.resource.data.delta is int
+        && request.resource.data.actor == request.auth.uid
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() <= 100
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}
